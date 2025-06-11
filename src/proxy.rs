@@ -143,22 +143,22 @@ impl ProxyHandler {
             &hyper::Method::CONNECT => match self.tunnel_client.connect(host.as_str()).await {
                 Ok(upstream) => tunnel(upstream, request),
                 Err(e) => {
-                    tracing::warn!("Failed to connect to upstream without TLS: {}", e);
+                    tracing::warn!("Failed to connect to upstream without tls: {}", e);
 
                     build_full_response(
                         http::StatusCode::SERVICE_UNAVAILABLE,
-                        "failed to establish non-TLS connection with upstream",
+                        "failed to establish non-tls connection with upstream",
                     )
                 }
             },
             _ => match self.tunnel_client.connect_tls(host.as_str()).await {
                 Ok(upstream) => send_request(upstream, request).await?,
                 Err(e) => {
-                    tracing::warn!("Failed to connect to upstream: {}", e);
+                    tracing::warn!("Failed to tls connect to upstream: {}", e);
 
                     build_full_response(
                         http::StatusCode::SERVICE_UNAVAILABLE,
-                        "failed to establish connection with upstream",
+                        "failed to establish A tls connection with upstream",
                     )
                 }
             },
