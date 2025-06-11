@@ -185,7 +185,7 @@ impl Proxy {
 
         let listener = TcpListener::bind(addr).await?;
 
-        tracing::info!("Listening to port: {}", self.port);
+        tracing::info!("Listening on port: {}", self.port);
 
         loop {
             let (tcp_stream, addr) = listener.accept().await?;

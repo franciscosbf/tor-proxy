@@ -1,6 +1,6 @@
 use anyhow::Context;
 use clap::Parser;
-use tor_proxy::{PKG_NAME, proxy::Proxy, tunnel::TunnelClient};
+use tor_proxy::{CRATE_NAME, proxy::Proxy, tunnel::TunnelClient};
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 /// Tunnels HTTP communications through Tor network.
@@ -18,7 +18,7 @@ fn init_tracing() {
         let target = metadata.target();
         let level = *metadata.level();
 
-        target.starts_with(PKG_NAME) && level >= tracing::Level::INFO
+        target.starts_with(CRATE_NAME) && level >= tracing::Level::INFO
     });
 
     tracing_subscriber::registry()
