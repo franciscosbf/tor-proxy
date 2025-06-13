@@ -10,12 +10,14 @@ use crate::{HTTPS_PORT, barrier::Barrier, tunnel::TunnelClient};
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 
+const MIN_BUF_SIZE: usize = 8 * 1024;
+
 #[derive(Debug, thiserror::Error)]
 pub enum ProxyError {
+    #[error("{name} buffer must be at least 8KiB")]
+    InvalidBuffer { name: &'static str },
     #[error(transparent)]
     Io(#[from] std::io::Error),
-    #[error(transparent)]
-    TlsAcceptor(#[from] tokio_native_tls::native_tls::Error),
 }
 
 fn build_response(
@@ -50,72 +52,59 @@ where
     build_response(status, body)
 }
 
-fn tunnel(
-    mut upstream: DataStream,
-    request: hyper::Request<hyper::body::Incoming>,
-) -> hyper::Response<BoxBody<Bytes, hyper::Error>> {
-    tokio::spawn(async move {
-        match hyper::upgrade::on(request).await.map(TokioIo::new) {
-            Ok(mut upgraded) => {
-                if let Err(e) = tokio::io::copy_bidirectional(&mut upgraded, &mut upstream).await {
-                    tracing::debug!("Data tunneling has failed: {}", e);
-                }
-            }
-            Err(e) => {
-                tracing::debug!("Tunnel upgrade has failed: {}", e);
-            }
-        }
-    });
-
-    build_empty_response(http::StatusCode::OK)
-}
-
-async fn send_request(
-    upstream: tokio_native_tls::TlsStream<DataStream>,
-    request: hyper::Request<hyper::body::Incoming>,
-) -> Result<hyper::Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
-    let upstream = TokioIo::new(upstream);
-
-    let response = match hyper::client::conn::http1::Builder::new()
-        .preserve_header_case(true)
-        .title_case_headers(true)
-        .handshake(upstream)
-        .await
-    {
-        Ok((mut sender, connection)) => {
-            tokio::spawn(async move {
-                if let Err(e) = connection.await {
-                    tracing::warn!("Failed to hold HTTP connection with upstream: {}", e);
-                }
-            });
-
-            sender
-                .send_request(request)
-                .await?
-                .map(|response| response.boxed())
-        }
-        Err(e) => {
-            tracing::warn!("HTTP handshake with upstream has failed: {}", e);
-
-            build_full_response(
-                http::StatusCode::SERVICE_UNAVAILABLE,
-                "connection with upstream didn't proceed as expected",
-            )
-        }
-    };
-
-    Ok(response)
+#[derive(Clone, Copy)]
+pub struct BufferSizes {
+    pub outgoing_buf: usize,
+    pub incoming_buf: usize,
 }
 
 struct ProxyHandler {
     tunnel_client: TunnelClient,
+    buffer_sizes: BufferSizes,
 }
 
 impl ProxyHandler {
+    fn spawn_tunnel(
+        &self,
+        mut upstream: DataStream,
+        request: hyper::Request<hyper::body::Incoming>,
+    ) {
+        let buffer_sizes = self.buffer_sizes;
+
+        tokio::spawn(async move {
+            match hyper::upgrade::on(request).await.map(TokioIo::new) {
+                Ok(mut upgraded) => {
+                    if let Err(e) = tokio::io::copy_bidirectional_with_sizes(
+                        &mut upgraded,
+                        &mut upstream,
+                        buffer_sizes.outgoing_buf,
+                        buffer_sizes.incoming_buf,
+                    )
+                    .await
+                    {
+                        tracing::debug!("Data tunneling has failed: {}", e);
+                    }
+                }
+                Err(e) => {
+                    tracing::debug!("Tunnel upgrade has failed: {}", e);
+                }
+            }
+        });
+    }
+
     async fn handle(
         &self,
         request: hyper::Request<hyper::body::Incoming>,
     ) -> Result<hyper::Response<BoxBody<Bytes, hyper::Error>>, hyper::Error> {
+        if !request.method().eq(&hyper::Method::CONNECT) {
+            let response = build_full_response(
+                http::StatusCode::NOT_IMPLEMENTED,
+                "proxy only allows CONNECT request method",
+            );
+
+            return Ok(response);
+        }
+
         let authority = match request.uri().authority() {
             Some(authority) => authority,
             None => {
@@ -139,30 +128,22 @@ impl ProxyHandler {
         }
         let host = authority.host().to_string();
 
-        let response = match request.method() {
-            &hyper::Method::CONNECT => match self.tunnel_client.connect(host.as_str()).await {
-                Ok(upstream) => tunnel(upstream, request),
-                Err(e) => {
-                    tracing::warn!("Failed to connect to upstream: {}", e);
+        let upstream = match self.tunnel_client.connect(host.as_str()).await {
+            Ok(upstream) => upstream,
+            Err(e) => {
+                tracing::warn!("Failed to connect to upstream: {}", e);
 
-                    build_full_response(
-                        http::StatusCode::SERVICE_UNAVAILABLE,
-                        "failed to establish connection with upstream",
-                    )
-                }
-            },
-            _ => match self.tunnel_client.connect_tls(host.as_str()).await {
-                Ok(upstream) => send_request(upstream, request).await?,
-                Err(e) => {
-                    tracing::warn!("Failed to tls connect to upstream: {}", e);
+                let response = build_full_response(
+                    http::StatusCode::SERVICE_UNAVAILABLE,
+                    "failed to establish connection with upstream",
+                );
 
-                    build_full_response(
-                        http::StatusCode::SERVICE_UNAVAILABLE,
-                        "failed to establish a tls connection with upstream",
-                    )
-                }
-            },
+                return Ok(response);
+            }
         };
+        self.spawn_tunnel(upstream, request);
+
+        let response = build_empty_response(http::StatusCode::OK);
 
         Ok(response)
     }
@@ -175,14 +156,28 @@ pub struct Proxy {
 }
 
 impl Proxy {
-    pub fn build(barrier: Barrier, tunnel_client: TunnelClient, port: u16) -> Self {
-        let handler = Arc::new(ProxyHandler { tunnel_client });
+    pub fn build(
+        barrier: Barrier,
+        tunnel_client: TunnelClient,
+        port: u16,
+        buffer_sizes: BufferSizes,
+    ) -> Result<Self, ProxyError> {
+        if buffer_sizes.incoming_buf != MIN_BUF_SIZE {
+            return Err(ProxyError::InvalidBuffer { name: "incoming" });
+        } else if buffer_sizes.outgoing_buf != MIN_BUF_SIZE {
+            return Err(ProxyError::InvalidBuffer { name: "outgoing" });
+        }
 
-        Self {
+        let handler = Arc::new(ProxyHandler {
+            tunnel_client,
+            buffer_sizes,
+        });
+
+        Ok(Self {
             barrier,
             handler,
             port,
-        }
+        })
     }
 
     fn detatch(

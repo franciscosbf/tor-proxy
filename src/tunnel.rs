@@ -18,8 +18,6 @@ pub enum TunnelClientError {
     WithoutCircuit,
     #[error(transparent)]
     TorProto(#[from] tor_proto::Error),
-    #[error(transparent)]
-    TlsConnector(#[from] tokio_native_tls::native_tls::Error),
 }
 
 pub struct TunnelClient {
@@ -68,18 +66,5 @@ impl TunnelClient {
         }
 
         Ok(data_stream)
-    }
-
-    pub async fn connect_tls(
-        &self,
-        host: &str,
-    ) -> Result<tokio_native_tls::TlsStream<DataStream>, TunnelClientError> {
-        let data_stream = self.connect(host).await?;
-
-        let connector: tokio_native_tls::TlsConnector =
-            tokio_native_tls::native_tls::TlsConnector::new()?.into();
-        let tls_stream = connector.connect(host, data_stream).await?;
-
-        Ok(tls_stream)
     }
 }

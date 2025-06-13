@@ -2,7 +2,12 @@ use std::{num::ParseIntError, time::Duration};
 
 use anyhow::Context;
 use clap::Parser;
-use tor_proxy::{CRATE_NAME, barrier::Barrier, proxy::Proxy, tunnel::TunnelClient};
+use tor_proxy::{
+    CRATE_NAME,
+    barrier::Barrier,
+    proxy::{BufferSizes, Proxy},
+    tunnel::TunnelClient,
+};
 use tracing_subscriber::{Layer, layer::SubscriberExt, util::SubscriberInitExt};
 
 fn parse_duration(arg: &str) -> Result<Duration, ParseIntError> {
@@ -20,11 +25,17 @@ struct Args {
     port: u16,
     /// GCRA limiter replenish interval in seconds (time it
     /// takes to replenish a single cell during exaustion)
-    #[arg(short, long,value_parser = parse_duration, default_value = "4", verbatim_doc_comment)]
+    #[arg(short, long, value_parser = parse_duration, default_value = "4", verbatim_doc_comment)]
     repenish: Duration,
     /// GCRA limiter max burst size until triggered.
     #[arg(short, long, default_value_t = 100)]
     max_burst: u32,
+    /// Connection buffer between user and proxy (in KiB).
+    #[arg(short, long, default_value_t = 40)]
+    incoming_buf: u32,
+    /// Connection buffer between proxy and Tor network (in KiB).
+    #[arg(short, long, default_value_t = 40)]
+    outgoing_buf: u32,
     /// Increase tracing verbosity.
     #[arg(short, long)]
     debug: bool,
@@ -60,7 +71,13 @@ async fn main() -> anyhow::Result<()> {
         .await
         .context("Failed to bootstrap Tor client")?;
 
-    let proxy = Proxy::build(barrier, tunnel_client, args.port);
+    let buffer_sizes = BufferSizes {
+        outgoing_buf: args.outgoing_buf as usize * 1024,
+        incoming_buf: args.incoming_buf as usize * 1024,
+    };
+
+    let proxy = Proxy::build(barrier, tunnel_client, args.port, buffer_sizes)
+        .context("Failed to build proxy")?;
 
     init_tracing(args.debug);
 
