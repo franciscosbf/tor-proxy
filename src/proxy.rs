@@ -162,9 +162,9 @@ impl Proxy {
         port: u16,
         buffer_sizes: BufferSizes,
     ) -> Result<Self, ProxyError> {
-        if buffer_sizes.incoming_buf != MIN_BUF_SIZE {
+        if buffer_sizes.incoming_buf < MIN_BUF_SIZE {
             return Err(ProxyError::InvalidBuffer { name: "incoming" });
-        } else if buffer_sizes.outgoing_buf != MIN_BUF_SIZE {
+        } else if buffer_sizes.outgoing_buf < MIN_BUF_SIZE {
             return Err(ProxyError::InvalidBuffer { name: "outgoing" });
         }
 

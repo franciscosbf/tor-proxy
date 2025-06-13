@@ -65,11 +65,11 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let barrier =
-        Barrier::build(args.repenish, args.max_burst).context("Failed to build rate limiter")?;
+        Barrier::build(args.repenish, args.max_burst).context("failed to build rate limiter")?;
 
     let tunnel_client = TunnelClient::bootstrap()
         .await
-        .context("Failed to bootstrap Tor client")?;
+        .context("failed to bootstrap Tor client")?;
 
     let buffer_sizes = BufferSizes {
         outgoing_buf: args.outgoing_buf as usize * 1024,
@@ -77,11 +77,11 @@ async fn main() -> anyhow::Result<()> {
     };
 
     let proxy = Proxy::build(barrier, tunnel_client, args.port, buffer_sizes)
-        .context("Failed to build proxy")?;
+        .context("failed to build proxy")?;
 
     init_tracing(args.debug);
 
-    proxy.run().await.context("Failed to run proxy")?;
+    proxy.run().await.context("failed to run proxy")?;
 
     Ok(())
 }
