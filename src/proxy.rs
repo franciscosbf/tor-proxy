@@ -185,6 +185,56 @@ impl Proxy {
         }
     }
 
+    fn detatch(
+        self,
+        listener: TcpListener,
+        mut exit_recv: tokio::sync::oneshot::Receiver<()>,
+    ) -> tokio::task::JoinHandle<()> {
+        tokio::spawn(async move {
+            loop {
+                let (tcp_stream, addr) = tokio::select! {
+                    result = listener.accept() => match result {
+                        Ok(connection) => connection,
+                        Err(e) => {
+                            tracing::warn!("Failed while waiting for incoming connections: {}", e);
+
+                            return;
+                        },
+                    },
+                    _ = &mut exit_recv => return,
+                };
+
+                if let Some(wait_time) = self.barrier.jammed() {
+                    tracing::warn!(
+                        "Rate limiting during {:.2}s until before allowing new connections.",
+                        wait_time.as_secs_f64()
+                    );
+
+                    continue;
+                }
+
+                tracing::info!("Received connection from {}", addr);
+
+                let chandler = Arc::clone(&self.handler);
+
+                tokio::spawn(async move {
+                    if let Err(e) = hyper::server::conn::http1::Builder::new()
+                        .preserve_header_case(true)
+                        .title_case_headers(true)
+                        .serve_connection(
+                            TokioIo::new(tcp_stream),
+                            hyper::service::service_fn(|req| chandler.handle(req)),
+                        )
+                        .with_upgrades()
+                        .await
+                    {
+                        tracing::warn!("Failed to serve {}: {}", addr, e);
+                    }
+                });
+            }
+        })
+    }
+
     pub async fn run(self) -> Result<(), ProxyError> {
         let addr = SocketAddr::from((LOCALHOST, self.port));
 
@@ -192,36 +242,20 @@ impl Proxy {
 
         tracing::info!("Listening on port {}", self.port);
 
-        loop {
-            let (tcp_stream, addr) = listener.accept().await?;
+        let (exit_send, exit_recv) = tokio::sync::oneshot::channel();
 
-            if let Some(wait_time) = self.barrier.jammed() {
-                tracing::warn!(
-                    "Rate limiting during {:.2}s until before allowing new connections.",
-                    wait_time.as_secs_f64()
-                );
+        let mut proxy_handle = self.detatch(listener, exit_recv);
 
-                continue;
+        tokio::select! {
+            _ = &mut proxy_handle => (),
+            _ = tokio::signal::ctrl_c() => {
+                tracing::info!("Proxy is terminating...");
+
+                let _ = exit_send.send(());
+                let _ = proxy_handle.await;
             }
-
-            tracing::info!("Received connection from {}", addr);
-
-            let chandler = Arc::clone(&self.handler);
-
-            tokio::spawn(async move {
-                if let Err(e) = hyper::server::conn::http1::Builder::new()
-                    .preserve_header_case(true)
-                    .title_case_headers(true)
-                    .serve_connection(
-                        TokioIo::new(tcp_stream),
-                        hyper::service::service_fn(|req| chandler.handle(req)),
-                    )
-                    .with_upgrades()
-                    .await
-                {
-                    tracing::warn!("Failed to serve {}: {}", addr, e);
-                }
-            });
         }
+
+        Ok(())
     }
 }
