@@ -1,3 +1,4 @@
+pub mod barrier;
 pub mod proxy;
 pub mod tunnel;
 

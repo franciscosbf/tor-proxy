@@ -30,3 +30,4 @@ tokio = { version = "1.45.1", features = [
   "signal",
 ] }
 tokio-native-tls = "0.3.1"
+governor = "0.10.0"

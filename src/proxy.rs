@@ -6,7 +6,7 @@ use http_body_util::{BodyExt, combinators::BoxBody};
 use hyper_util::rt::TokioIo;
 use tokio::net::TcpListener;
 
-use crate::{HTTPS_PORT, tunnel::TunnelClient};
+use crate::{HTTPS_PORT, barrier::Barrier, tunnel::TunnelClient};
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 
@@ -57,8 +57,11 @@ fn tunnel(
     tokio::spawn(async move {
         match hyper::upgrade::on(request).await.map(TokioIo::new) {
             Ok(mut upgraded) => {
-                if let Err(e) = tokio::io::copy_bidirectional(&mut upgraded, &mut upstream).await {
-                    tracing::warn!("Data tunneling has failed: {:?}", e);
+                match tokio::io::copy_bidirectional(&mut upgraded, &mut upstream).await {
+                    Err(e) if e.kind() != std::io::ErrorKind::ConnectionReset => {
+                        tracing::warn!("Data tunneling has failed: {:?}", e);
+                    }
+                    _ => (),
                 }
             }
             Err(e) => {
@@ -158,7 +161,7 @@ impl ProxyHandler {
 
                     build_full_response(
                         http::StatusCode::SERVICE_UNAVAILABLE,
-                        "failed to establish A tls connection with upstream",
+                        "failed to establish a tls connection with upstream",
                     )
                 }
             },
@@ -169,15 +172,20 @@ impl ProxyHandler {
 }
 
 pub struct Proxy {
-    port: u16,
+    barrier: Barrier,
     handler: Arc<ProxyHandler>,
+    port: u16,
 }
 
 impl Proxy {
-    pub fn build(tunnel_client: TunnelClient, port: u16) -> Self {
+    pub fn build(barrier: Barrier, tunnel_client: TunnelClient, port: u16) -> Self {
         let handler = Arc::new(ProxyHandler { tunnel_client });
 
-        Self { port, handler }
+        Self {
+            barrier,
+            handler,
+            port,
+        }
     }
 
     pub async fn run(self) -> Result<(), ProxyError> {
@@ -185,10 +193,19 @@ impl Proxy {
 
         let listener = TcpListener::bind(addr).await?;
 
-        tracing::info!("Listening on port: {}", self.port);
+        tracing::info!("Listening on port {}", self.port);
 
         loop {
             let (tcp_stream, addr) = listener.accept().await?;
+
+            if let Some(wait_time) = self.barrier.jammed() {
+                tracing::warn!(
+                    "Rate limiting, {:.2}s until new connections are allowed again.",
+                    wait_time.as_secs_f64()
+                );
+
+                continue;
+            }
 
             tracing::info!("Received connection from {}", addr);
 
