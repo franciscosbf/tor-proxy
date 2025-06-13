@@ -25,15 +25,23 @@ struct Args {
     /// GCRA limiter max burst size until triggered.
     #[arg(short, long, default_value_t = 100)]
     max_burst: u32,
+    /// Increase tracing verbosity.
+    #[arg(short, long)]
+    debug: bool,
 }
 
-fn init_tracing() {
+fn init_tracing(debug: bool) {
     let layer = tracing_subscriber::fmt::layer();
-    let filter = tracing_subscriber::filter::filter_fn(|metadata| {
+    let upper_level = if debug {
+        tracing::Level::DEBUG
+    } else {
+        tracing::Level::INFO
+    };
+    let filter = tracing_subscriber::filter::filter_fn(move |metadata| {
         let target = metadata.target();
         let level = *metadata.level();
 
-        target.starts_with(CRATE_NAME) && level <= tracing::Level::INFO
+        target.starts_with(CRATE_NAME) && level <= upper_level
     });
 
     tracing_subscriber::registry()
@@ -54,7 +62,7 @@ async fn main() -> anyhow::Result<()> {
 
     let proxy = Proxy::build(barrier, tunnel_client, args.port);
 
-    init_tracing();
+    init_tracing(args.debug);
 
     proxy.run().await.context("Failed to run proxy")?;
 

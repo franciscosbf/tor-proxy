@@ -1,4 +1,7 @@
 use arti_client::{DataStream, TorAddr, TorClient, TorClientConfig};
+use itertools::Itertools;
+use safelog::Redactable;
+use tor_proto::stream::ClientStreamCtrl;
 use tor_rtcompat::PreferredRuntime;
 
 use crate::HTTPS_PORT;
@@ -9,6 +12,12 @@ pub enum TunnelClientError {
     TorAddress(#[from] arti_client::TorAddrError),
     #[error(transparent)]
     TorClient(#[from] arti_client::Error),
+    #[error("failed to inspect connection controller")]
+    WithoutController,
+    #[error("failed to retrieve tor circuilt")]
+    WithoutCircuit,
+    #[error(transparent)]
+    TorProto(#[from] tor_proto::Error),
     #[error(transparent)]
     TlsConnector(#[from] tokio_native_tls::native_tls::Error),
 }
@@ -30,6 +39,33 @@ impl TunnelClient {
         let addr = TorAddr::from((host, HTTPS_PORT))?;
 
         let data_stream = isolated.connect(addr).await?;
+
+        if tracing::enabled!(tracing::Level::DEBUG) {
+            match data_stream
+                .client_stream_ctrl()
+                .and_then(|ctrl| ctrl.circuit())
+            {
+                Some(circuit) => match circuit.path_ref() {
+                    Ok(circuit_path) => {
+                        tracing::debug!(
+                            "Connected to '{}' using circuit {}",
+                            host,
+                            circuit_path.iter().map(Redactable::redacted).join(", "),
+                        );
+                    }
+                    Err(e) => {
+                        tracing::debug!(
+                            "Failed to retrive stream circuit path with {}: {}",
+                            host,
+                            e
+                        );
+                    }
+                },
+                None => {
+                    tracing::debug!("Failed to retrieve stream circuit with {}", host)
+                }
+            }
+        }
 
         Ok(data_stream)
     }

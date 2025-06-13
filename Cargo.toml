@@ -19,6 +19,7 @@ bytes = "1.10.1"
 http = "1.3.1"
 http-body-util = "0.1.3"
 arti-client = { version = "0.31.0", features = ["bridge-client"] }
+tor-proto = { version = "0.31.0", features = ["stream-ctrl"] }
 tor-rtcompat = { version = "0.31.0", features = ["native-tls", "tokio"] }
 tokio = { version = "1.45.1", features = [
   "rt",
@@ -31,3 +32,5 @@ tokio = { version = "1.45.1", features = [
 ] }
 tokio-native-tls = "0.3.1"
 governor = "0.10.0"
+itertools = "0.14.0"
+safelog = "0.4.6"

@@ -57,15 +57,12 @@ fn tunnel(
     tokio::spawn(async move {
         match hyper::upgrade::on(request).await.map(TokioIo::new) {
             Ok(mut upgraded) => {
-                match tokio::io::copy_bidirectional(&mut upgraded, &mut upstream).await {
-                    Err(e) if e.kind() != std::io::ErrorKind::ConnectionReset => {
-                        tracing::warn!("Data tunneling has failed: {:?}", e);
-                    }
-                    _ => (),
+                if let Err(e) = tokio::io::copy_bidirectional(&mut upgraded, &mut upstream).await {
+                    tracing::debug!("Data tunneling has failed: {}", e);
                 }
             }
             Err(e) => {
-                tracing::warn!("Tunnel upgrade has failed: {}", e);
+                tracing::debug!("Tunnel upgrade has failed: {}", e);
             }
         }
     });
@@ -146,11 +143,11 @@ impl ProxyHandler {
             &hyper::Method::CONNECT => match self.tunnel_client.connect(host.as_str()).await {
                 Ok(upstream) => tunnel(upstream, request),
                 Err(e) => {
-                    tracing::warn!("Failed to connect to upstream without tls: {}", e);
+                    tracing::warn!("Failed to connect to upstream: {}", e);
 
                     build_full_response(
                         http::StatusCode::SERVICE_UNAVAILABLE,
-                        "failed to establish non-tls connection with upstream",
+                        "failed to establish connection with upstream",
                     )
                 }
             },
@@ -200,7 +197,7 @@ impl Proxy {
 
             if let Some(wait_time) = self.barrier.jammed() {
                 tracing::warn!(
-                    "Rate limiting, {:.2}s until new connections are allowed again.",
+                    "Rate limiting during {:.2}s until before allowing new connections.",
                     wait_time.as_secs_f64()
                 );
 
