@@ -122,12 +122,12 @@ impl ProxyHandler {
             }
             _ => (),
         }
-        let host = authority.host().to_string();
+        let host = authority.host();
 
-        let upstream = match self.tunnel_client.connect(host.as_str()).await {
+        let upstream = match self.tunnel_client.connect(host).await {
             Ok(upstream) => upstream,
             Err(e) => {
-                tracing::warn!("Failed to connect to upstream: {}", e);
+                tracing::warn!("Failed to connect to upstream {}: {}", host, e);
 
                 let response = build_full_response(
                     http::StatusCode::SERVICE_UNAVAILABLE,
