@@ -33,3 +33,4 @@ tokio = { version = "1.45.1", features = [
 governor = "0.10.0"
 itertools = "0.14.0"
 safelog = "0.4.6"
+bytesize = "2.0.1"

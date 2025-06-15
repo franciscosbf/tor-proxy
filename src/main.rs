@@ -1,6 +1,7 @@
-use std::{num::ParseIntError, time::Duration};
+use std::{num::ParseIntError, str::FromStr, time::Duration};
 
 use anyhow::Context;
+use bytesize::ByteSize;
 use clap::Parser;
 use tor_proxy::{
     CRATE_NAME,
@@ -14,6 +15,10 @@ fn parse_duration(arg: &str) -> Result<Duration, ParseIntError> {
     let seconds = arg.parse()?;
 
     Ok(std::time::Duration::from_secs(seconds))
+}
+
+fn parse_byte_size(arg: &str) -> Result<ByteSize, String> {
+    ByteSize::from_str(arg)
 }
 
 /// Tunnels HTTP communications through Tor network
@@ -30,12 +35,12 @@ struct Args {
     /// GCRA limiter max burst size until triggered.
     #[arg(short, long, default_value_t = 100)]
     max_burst: u32,
-    /// Connection buffer between user and proxy (in KiB).
-    #[arg(short, long, default_value_t = 40)]
-    incoming_buf: u32,
-    /// Connection buffer between proxy and Tor network (in KiB).
-    #[arg(short, long, default_value_t = 40)]
-    outgoing_buf: u32,
+    /// Connection buffer between user and proxy.
+    #[arg(short, long, value_parser = parse_byte_size, default_value = "1KiB")]
+    incoming_buf: ByteSize,
+    /// Connection buffer between proxy and Tor network.
+    #[arg(short, long, value_parser = parse_byte_size, default_value = "1KiB")]
+    outgoing_buf: ByteSize,
     /// Increase tracing verbosity.
     #[arg(short, long)]
     debug: bool,
@@ -72,8 +77,8 @@ async fn main() -> anyhow::Result<()> {
         .context("failed to bootstrap Tor client")?;
 
     let buffer_sizes = BufferSizes {
-        outgoing_buf: args.outgoing_buf as usize * 1024,
-        incoming_buf: args.incoming_buf as usize * 1024,
+        outgoing_buf: args.outgoing_buf.as_u64() as usize,
+        incoming_buf: args.incoming_buf.as_u64() as usize,
     };
 
     let proxy = Proxy::build(barrier, tunnel_client, args.port, buffer_sizes)
