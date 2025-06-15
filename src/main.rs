@@ -17,8 +17,10 @@ fn parse_duration(arg: &str) -> Result<Duration, ParseIntError> {
     Ok(std::time::Duration::from_secs(seconds))
 }
 
-fn parse_byte_size(arg: &str) -> Result<ByteSize, String> {
-    ByteSize::from_str(arg)
+fn parse_byte_size(arg: &str) -> Result<usize, String> {
+    let byte_size = ByteSize::from_str(arg)?;
+
+    Ok(byte_size.as_u64() as usize)
 }
 
 /// Tunnels HTTP communications through Tor network
@@ -37,10 +39,10 @@ struct Args {
     max_burst: u32,
     /// Connection buffer between user and proxy.
     #[arg(short, long, value_parser = parse_byte_size, default_value = "512B")]
-    incoming_buf: ByteSize,
+    incoming_buf: usize,
     /// Connection buffer between proxy and Tor network.
     #[arg(short, long, value_parser = parse_byte_size, default_value = "512B")]
-    outgoing_buf: ByteSize,
+    outgoing_buf: usize,
     /// Increase tracing verbosity.
     #[arg(short, long)]
     debug: bool,
@@ -77,8 +79,8 @@ async fn main() -> anyhow::Result<()> {
         .context("failed to bootstrap Tor client")?;
 
     let buffer_sizes = BufferSizes {
-        outgoing_buf: args.outgoing_buf.as_u64() as usize,
-        incoming_buf: args.incoming_buf.as_u64() as usize,
+        outgoing_buf: args.outgoing_buf,
+        incoming_buf: args.incoming_buf,
     };
 
     let proxy = Proxy::build(barrier, tunnel_client, args.port, buffer_sizes)
