@@ -35,14 +35,15 @@ struct Args {
     #[arg(short, long, value_parser = parse_duration, default_value = "4")]
     repenish: Duration,
     /// GCRA limiter max burst size until triggered.
-    #[arg(short, long, default_value_t = 100)]
+    #[arg(long, default_value_t = 100)]
     max_burst: u32,
     /// Min number of Tor circuits established after client boostrap.
     #[arg(short, long, default_value_t = 12)]
     circuits: usize,
-    /// Time to live in seconds per cached Tor client. Clients
-    /// are created as new subdomains (up two second domain level)
-    /// are encountered on requested connections.
+    /// Max capacity of cached Tor clients.
+    #[arg(long, default_value_t = 100)]
+    max_entries: u64,
+    /// Time to live in seconds per cached Tor client.
     #[arg(short, long, value_parser = parse_duration, default_value = "3600")]
     ttl: Duration,
     /// Connection buffer between user and proxy.
@@ -82,7 +83,7 @@ async fn main() -> anyhow::Result<()> {
     let barrier =
         Barrier::build(args.repenish, args.max_burst).context("failed to build rate limiter")?;
 
-    let tunnel_client = TunnelClient::bootstrap(args.circuits, args.ttl)
+    let tunnel_client = TunnelClient::bootstrap(args.circuits, args.max_entries, args.ttl)
         .await
         .context("failed to bootstrap Tor client")?;
 

@@ -33,7 +33,11 @@ pub struct TunnelClient {
 }
 
 impl TunnelClient {
-    pub async fn bootstrap(circuits: usize, ttl: Duration) -> Result<Self, TunnelClientError> {
+    pub async fn bootstrap(
+        circuits: usize,
+        max_entries: u64,
+        ttl: Duration,
+    ) -> Result<Self, TunnelClientError> {
         let mut config_builder = TorClientConfig::builder();
         config_builder
             .preemptive_circuits()
@@ -41,7 +45,10 @@ impl TunnelClient {
         let config = config_builder.build().unwrap();
 
         let tor_client = TorClient::create_bootstrapped(config).await?;
-        let isolated_clients = Cache::builder().time_to_live(ttl).build();
+        let isolated_clients = Cache::builder()
+            .max_capacity(max_entries)
+            .time_to_live(ttl)
+            .build();
 
         Ok(Self {
             tor_client,
