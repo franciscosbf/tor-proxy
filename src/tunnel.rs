@@ -1,4 +1,5 @@
 use arti_client::{DataStream, TorAddr, TorClient, TorClientConfig};
+use dashmap::DashMap;
 use itertools::Itertools;
 use safelog::Redactable;
 use tor_proto::stream::ClientStreamCtrl;
@@ -20,22 +21,41 @@ pub enum TunnelClientError {
     TorProto(#[from] tor_proto::Error),
 }
 
+fn dns_last_two_levels(domain: &str) -> String {
+    domain.split('.').rev().take(2).join(".")
+}
+
 pub struct TunnelClient {
     tor_client: TorClient<PreferredRuntime>,
+    cached_clients: DashMap<String, TorClient<PreferredRuntime>>,
 }
 
 impl TunnelClient {
     pub async fn bootstrap() -> Result<Self, TunnelClientError> {
         let config = TorClientConfig::default();
         let tor_client = TorClient::create_bootstrapped(config).await?;
+        let cached_clients = DashMap::new();
 
-        Ok(Self { tor_client })
+        Ok(Self {
+            tor_client,
+            cached_clients,
+        })
     }
 
     pub async fn connect(&self, host: &str) -> Result<DataStream, TunnelClientError> {
         let addr = TorAddr::from((host, HTTPS_PORT))?;
 
-        let data_stream = self.tor_client.connect(addr).await?;
+        let host_base = dns_last_two_levels(host);
+
+        let isolated_client = self
+            .cached_clients
+            .entry(host_base.clone())
+            .or_insert_with(|| self.tor_client.isolated_client())
+            .clone();
+
+        let data_stream = isolated_client.connect(addr).await.inspect_err(|_| {
+            self.cached_clients.remove(&host_base);
+        })?;
 
         if tracing::enabled!(tracing::Level::DEBUG) {
             match data_stream
