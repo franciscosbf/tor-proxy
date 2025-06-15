@@ -10,12 +10,8 @@ use crate::{HTTPS_PORT, barrier::Barrier, tunnel::TunnelClient};
 
 const LOCALHOST: [u8; 4] = [127, 0, 0, 1];
 
-const MIN_BUF_SIZE: usize = 8 * 1024;
-
 #[derive(Debug, thiserror::Error)]
 pub enum ProxyError {
-    #[error("{name} buffer must be at least 8KiB")]
-    InvalidBuffer { name: &'static str },
     #[error(transparent)]
     Io(#[from] std::io::Error),
 }
@@ -162,12 +158,6 @@ impl Proxy {
         port: u16,
         buffer_sizes: BufferSizes,
     ) -> Result<Self, ProxyError> {
-        if buffer_sizes.incoming_buf < MIN_BUF_SIZE {
-            return Err(ProxyError::InvalidBuffer { name: "incoming" });
-        } else if buffer_sizes.outgoing_buf < MIN_BUF_SIZE {
-            return Err(ProxyError::InvalidBuffer { name: "outgoing" });
-        }
-
         let handler = Arc::new(ProxyHandler {
             tunnel_client,
             buffer_sizes,
