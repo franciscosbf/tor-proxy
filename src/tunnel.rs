@@ -33,10 +33,9 @@ impl TunnelClient {
     }
 
     pub async fn connect(&self, host: &str) -> Result<DataStream, TunnelClientError> {
-        let isolated = self.tor_client.isolated_client();
         let addr = TorAddr::from((host, HTTPS_PORT))?;
 
-        let data_stream = isolated.connect(addr).await?;
+        let data_stream = self.tor_client.connect(addr).await?;
 
         if tracing::enabled!(tracing::Level::DEBUG) {
             match data_stream
