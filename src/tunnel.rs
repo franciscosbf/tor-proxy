@@ -1,6 +1,8 @@
+use std::time::Duration;
+
 use arti_client::{DataStream, TorAddr, TorClient, TorClientConfig};
-use dashmap::DashMap;
 use itertools::Itertools;
+use moka::future::Cache;
 use safelog::Redactable;
 use tor_proto::stream::ClientStreamCtrl;
 use tor_rtcompat::PreferredRuntime;
@@ -27,11 +29,11 @@ fn dns_last_two_levels(domain: &str) -> String {
 
 pub struct TunnelClient {
     tor_client: TorClient<PreferredRuntime>,
-    cached_clients: DashMap<String, TorClient<PreferredRuntime>>,
+    isolated_clients: Cache<String, TorClient<PreferredRuntime>>,
 }
 
 impl TunnelClient {
-    pub async fn bootstrap(circuits: usize) -> Result<Self, TunnelClientError> {
+    pub async fn bootstrap(circuits: usize, ttl: Duration) -> Result<Self, TunnelClientError> {
         let mut config_builder = TorClientConfig::builder();
         config_builder
             .preemptive_circuits()
@@ -39,28 +41,34 @@ impl TunnelClient {
         let config = config_builder.build().unwrap();
 
         let tor_client = TorClient::create_bootstrapped(config).await?;
-        let cached_clients = DashMap::new();
+        let isolated_clients = Cache::builder().time_to_live(ttl).build();
 
         Ok(Self {
             tor_client,
-            cached_clients,
+            isolated_clients,
         })
     }
 
     pub async fn connect(&self, host: &str) -> Result<DataStream, TunnelClientError> {
         let addr = TorAddr::from((host, HTTPS_PORT))?;
 
-        let host_base = dns_last_two_levels(host);
+        let host_base_domain = dns_last_two_levels(host);
 
         let isolated_client = self
-            .cached_clients
-            .entry(host_base.clone())
-            .or_insert_with(|| self.tor_client.isolated_client())
-            .clone();
+            .isolated_clients
+            .get_with(host_base_domain.clone(), async {
+                self.tor_client.isolated_client()
+            })
+            .await;
 
-        let data_stream = isolated_client.connect(addr).await.inspect_err(|_| {
-            self.cached_clients.remove(&host_base);
-        })?;
+        let data_stream = match isolated_client.connect(addr).await {
+            Ok(data_stream) => data_stream,
+            Err(e) => {
+                self.isolated_clients.invalidate(&host_base_domain).await;
+
+                return Err(e.into());
+            }
+        };
 
         if tracing::enabled!(tracing::Level::DEBUG) {
             match data_stream
