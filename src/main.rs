@@ -1,4 +1,4 @@
-use std::{num::ParseIntError, str::FromStr, time::Duration};
+use std::{collections::HashSet, num::ParseIntError, str::FromStr, time::Duration};
 
 use anyhow::Context;
 use bytesize::ByteSize;
@@ -59,16 +59,25 @@ struct Args {
 
 fn init_tracing(debug: bool) {
     let layer = tracing_subscriber::fmt::layer();
+    let allowed_traces = [
+        CRATE_NAME,
+        "tor_dirmgr",
+        "tor_guardmgr",
+        "tor_chanmgr",
+        "tor_cirmgr",
+    ]
+    .into_iter()
+    .collect::<HashSet<&'static str>>();
     let upper_level = if debug {
         tracing::Level::DEBUG
     } else {
         tracing::Level::INFO
     };
     let filter = tracing_subscriber::filter::filter_fn(move |metadata| {
-        let target = metadata.target();
+        let base_target = metadata.target().split(':').next().unwrap();
         let level = *metadata.level();
 
-        target.starts_with(CRATE_NAME) && level <= upper_level
+        allowed_traces.contains(base_target) && level <= upper_level
     });
 
     tracing_subscriber::registry()
