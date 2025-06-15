@@ -31,8 +31,13 @@ pub struct TunnelClient {
 }
 
 impl TunnelClient {
-    pub async fn bootstrap() -> Result<Self, TunnelClientError> {
-        let config = TorClientConfig::default();
+    pub async fn bootstrap(circuits: usize) -> Result<Self, TunnelClientError> {
+        let mut config_builder = TorClientConfig::builder();
+        config_builder
+            .preemptive_circuits()
+            .disable_at_threshold(circuits);
+        let config = config_builder.build().unwrap();
+
         let tor_client = TorClient::create_bootstrapped(config).await?;
         let cached_clients = DashMap::new();
 

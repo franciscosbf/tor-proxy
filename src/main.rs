@@ -37,6 +37,9 @@ struct Args {
     /// GCRA limiter max burst size until triggered.
     #[arg(short, long, default_value_t = 100)]
     max_burst: u32,
+    /// Min number of Tor circuits established after client boostrap.
+    #[arg(short, long, default_value_t = 12)]
+    circuits: usize,
     /// Connection buffer between user and proxy.
     #[arg(short, long, value_parser = parse_byte_size, default_value = "512B")]
     incoming_buf: usize,
@@ -74,7 +77,7 @@ async fn main() -> anyhow::Result<()> {
     let barrier =
         Barrier::build(args.repenish, args.max_burst).context("failed to build rate limiter")?;
 
-    let tunnel_client = TunnelClient::bootstrap()
+    let tunnel_client = TunnelClient::bootstrap(args.circuits)
         .await
         .context("failed to bootstrap Tor client")?;
 
