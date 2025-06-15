@@ -36,10 +36,10 @@ struct Args {
     #[arg(short, long, default_value_t = 100)]
     max_burst: u32,
     /// Connection buffer between user and proxy.
-    #[arg(short, long, value_parser = parse_byte_size, default_value = "1KiB")]
+    #[arg(short, long, value_parser = parse_byte_size, default_value = "8KiB")]
     incoming_buf: ByteSize,
     /// Connection buffer between proxy and Tor network.
-    #[arg(short, long, value_parser = parse_byte_size, default_value = "1KiB")]
+    #[arg(short, long, value_parser = parse_byte_size, default_value = "8KiB")]
     outgoing_buf: ByteSize,
     /// Increase tracing verbosity.
     #[arg(short, long)]
