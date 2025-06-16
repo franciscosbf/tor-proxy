@@ -33,7 +33,7 @@ struct Args {
     /// GCRA limiter replenish interval in seconds (time it
     /// takes to replenish a single cell during exaustion)
     #[arg(short, long, value_parser = parse_duration, default_value = "4")]
-    repenish: Duration,
+    replenish: Duration,
     /// GCRA limiter max burst size until triggered.
     #[arg(long, default_value_t = 100)]
     max_burst: u32,
@@ -90,7 +90,7 @@ async fn main() -> anyhow::Result<()> {
     let args = Args::parse();
 
     let barrier =
-        Barrier::build(args.repenish, args.max_burst).context("failed to build rate limiter")?;
+        Barrier::build(args.replenish, args.max_burst).context("failed to build rate limiter")?;
 
     let tunnel_client = TunnelClient::bootstrap(args.circuits, args.max_entries, args.ttl)
         .await
