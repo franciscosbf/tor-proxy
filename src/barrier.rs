@@ -11,7 +11,7 @@ use governor::{
 pub enum BarrierError {
     #[error("max burst must be greater than zero")]
     InvalidMaxBurst,
-    #[error("replenish internal must be greater than zero")]
+    #[error("replenish must be greater than zero")]
     InvalidReplenish,
 }
 
