@@ -7,7 +7,7 @@ Pretty simple HTTP tor proxy which allows only [CONNECT requests](https://develo
 Quick-and-dirty solution for safe compiling programs shipped with Arti (see more [here](https://tpo.pages.torproject.net/core/arti/guides/safer-build-options)):
 
 ```sh
-RUSTFLAGS="--remap-path-prefix $HOME/.cargo=.cargo --remap-path-prefix $(pwd)=." \
+RUSTFLAGS="--remap-path-prefix $HOME/.cargo=.cargo --remap-path-prefix $(pwd)=. --remap-path-prefix $HOME/.rustup=.rustup" \
    cargo build --release
 ```
 
