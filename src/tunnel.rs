@@ -1,4 +1,4 @@
-use std::time::Duration;
+use std::{net::IpAddr, time::Duration};
 
 use arti_client::{DataStream, TorAddr, TorClient, TorClientConfig};
 use itertools::Itertools;
@@ -59,11 +59,14 @@ impl TunnelClient {
     pub async fn connect(&self, host: &str) -> Result<DataStream, TunnelClientError> {
         let addr = TorAddr::from((host, HTTPS_PORT))?;
 
-        let host_base_domain = dns_last_two_levels(host);
+        let host_base = host
+            .parse::<IpAddr>()
+            .map(|_| host.to_string())
+            .unwrap_or_else(|_| dns_last_two_levels(host));
 
         let isolated_client = self
             .isolated_clients
-            .get_with(host_base_domain.clone(), async {
+            .get_with(host_base.clone(), async {
                 self.tor_client.isolated_client()
             })
             .await;
@@ -71,7 +74,7 @@ impl TunnelClient {
         let data_stream = match isolated_client.connect(addr).await {
             Ok(data_stream) => data_stream,
             Err(e) => {
-                self.isolated_clients.invalidate(&host_base_domain).await;
+                self.isolated_clients.invalidate(&host_base).await;
 
                 return Err(e.into());
             }
