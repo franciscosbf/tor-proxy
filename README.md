@@ -36,7 +36,7 @@ Options:
   -V, --version                      Print version
 ```
 
-`--replenish` and `--max-burst` allow to configure the [GCRA](https://en.wikipedia.org/wiki/Generic_cell_rate_algorithm) limiter for incoming connections. `--ttl` controls how long the circuit is cached for a given second level domain. `--incoming-buf` and `--outgoing-buf` are applied on each connection made and its associated tunnel to Tor network.
+`--replenish` and `--max-burst` allow to configure the [GCRA](https://en.wikipedia.org/wiki/Generic_cell_rate_algorithm) limiter for incoming connections. `--ttl` controls how long the circuit is cached for a given second level domain. `--incoming-buf` and `--outgoing-buf` are applied on each connection made and its associated tunnel to Tor network (examples of possible size units: B, Kb, Kib, Mb, Mib, Gb, Gib, ... PB).
 
 ### Security Concerns
 
